@@ -735,12 +735,15 @@ type Info implements Node {
 }
 
 type MetricsCpu {
-  used: Float
+  percentTotal: Float
 }
 
 type MetricsMemory {
   used: Float
   total: Float
+  free: Float
+  available: Float
+  percentTotal: Float
 }
 
 type Metrics implements Node {
@@ -789,9 +792,7 @@ type Registration implements Node {
 }
 
 type ConnectSettings {
-  status: String
-  sandbox: Boolean
-  flashGuid: String
+  id: String
 }
 
 type Owner {

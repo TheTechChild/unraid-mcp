@@ -40,22 +40,7 @@ QUERIES: dict[str, str] = {
     """,
     "networks": """
         query GetDockerNetworks {
-          dockerNetworks { id name driver scope }
-        }
-    """,
-    "network_details": """
-        query GetDockerNetwork($id: PrefixedID!) {
-          dockerNetwork(id: $id) { id name driver scope containers }
-        }
-    """,
-    "port_conflicts": """
-        query GetPortConflicts {
-          docker { portConflicts { containerName port conflictsWith } }
-        }
-    """,
-    "check_updates": """
-        query CheckContainerUpdates {
-          docker { containerUpdateStatuses { id name updateAvailable currentVersion latestVersion } }
+          docker { networks { id name driver scope } }
         }
     """,
 }
@@ -71,46 +56,19 @@ MUTATIONS: dict[str, str] = {
           docker { stop(id: $id) { id names state status } }
         }
     """,
-    "pause": """
-        mutation PauseContainer($id: PrefixedID!) {
-          docker { pause(id: $id) { id names state status } }
-        }
-    """,
-    "unpause": """
-        mutation UnpauseContainer($id: PrefixedID!) {
-          docker { unpause(id: $id) { id names state status } }
-        }
-    """,
-    "remove": """
-        mutation RemoveContainer($id: PrefixedID!) {
-          docker { removeContainer(id: $id) }
-        }
-    """,
-    "update": """
-        mutation UpdateContainer($id: PrefixedID!) {
-          docker { updateContainer(id: $id) { id names state status } }
-        }
-    """,
-    "update_all": """
-        mutation UpdateAllContainers {
-          docker { updateAllContainers { id names state status } }
-        }
-    """,
 }
 
-DESTRUCTIVE_ACTIONS = {"remove"}
+DESTRUCTIVE_ACTIONS: set[str] = set()
 _ACTIONS_REQUIRING_CONTAINER_ID = {
     "start",
     "stop",
     "restart",
-    "pause",
-    "unpause",
-    "remove",
-    "update",
     "details",
     "logs",
 }
-ALL_ACTIONS = set(QUERIES) | set(MUTATIONS) | {"restart"}
+# Actions not available in Unraid API v4.29.2 GraphQL schema
+_UNAVAILABLE_ACTIONS = {"pause", "unpause", "remove", "update", "update_all", "port_conflicts", "check_updates", "network_details"}
+ALL_ACTIONS = set(QUERIES) | set(MUTATIONS) | {"restart", "logs"} | _UNAVAILABLE_ACTIONS
 
 DOCKER_ACTIONS = Literal[
     "list",
@@ -267,6 +225,13 @@ def register_docker_tool(mcp: FastMCP) -> None:
         try:
             logger.info(f"Executing unraid_docker action={action}")
 
+            # Actions not available in Unraid API v4.29.2
+            if action in _UNAVAILABLE_ACTIONS:
+                raise ToolError(
+                    f"Action '{action}' is not available in the Unraid GraphQL API. "
+                    "Use the unraid-docker MCP server (Docker over SSH) for this operation."
+                )
+
             # --- Read-only queries ---
             if action == "list":
                 data = await make_graphql_request(QUERIES["list"])
@@ -286,42 +251,25 @@ def register_docker_tool(mcp: FastMCP) -> None:
                 raise ToolError(msg)
 
             if action == "logs":
-                actual_id = await _resolve_container_id(container_id or "")
-                data = await make_graphql_request(
-                    QUERIES["logs"], {"id": actual_id, "tail": tail_lines}
+                raise ToolError(
+                    "Container logs are not available via the Unraid GraphQL API. "
+                    "Use the unraid-docker MCP server (Docker over SSH) for logs."
                 )
-                return {"logs": _safe_get(data, "docker", "logs")}
 
             if action == "networks":
                 data = await make_graphql_request(QUERIES["networks"])
-                networks = data.get("dockerNetworks", [])
+                networks = _safe_get(data, "docker", "networks", default=[])
                 return {"networks": list(networks) if isinstance(networks, list) else []}
-
-            if action == "network_details":
-                data = await make_graphql_request(QUERIES["network_details"], {"id": network_id})
-                return dict(data.get("dockerNetwork") or {})
-
-            if action == "port_conflicts":
-                data = await make_graphql_request(QUERIES["port_conflicts"])
-                conflicts = _safe_get(data, "docker", "portConflicts", default=[])
-                return {"port_conflicts": list(conflicts) if isinstance(conflicts, list) else []}
-
-            if action == "check_updates":
-                data = await make_graphql_request(QUERIES["check_updates"])
-                statuses = _safe_get(data, "docker", "containerUpdateStatuses", default=[])
-                return {"update_statuses": list(statuses) if isinstance(statuses, list) else []}
 
             # --- Mutations ---
             if action == "restart":
                 actual_id = await _resolve_container_id(container_id or "")
-                # Stop (idempotent: treat "already stopped" as success)
                 stop_data = await make_graphql_request(
                     MUTATIONS["stop"],
                     {"id": actual_id},
                     operation_context={"operation": "stop"},
                 )
                 stop_was_idempotent = stop_data.get("idempotent_success", False)
-                # Start (idempotent: treat "already running" as success)
                 start_data = await make_graphql_request(
                     MUTATIONS["start"],
                     {"id": actual_id},
@@ -340,24 +288,16 @@ def register_docker_tool(mcp: FastMCP) -> None:
                     response["note"] = "Container was already stopped before restart"
                 return response
 
-            if action == "update_all":
-                data = await make_graphql_request(MUTATIONS["update_all"])
-                results = _safe_get(data, "docker", "updateAllContainers", default=[])
-                return {"success": True, "action": "update_all", "containers": results}
-
-            # Single-container mutations
+            # Single-container mutations (start, stop)
             if action in MUTATIONS:
                 actual_id = await _resolve_container_id(container_id or "")
-                op_context: dict[str, str] | None = (
-                    {"operation": action} if action in ("start", "stop") else None
-                )
+                op_context: dict[str, str] | None = {"operation": action}
                 data = await make_graphql_request(
                     MUTATIONS[action],
                     {"id": actual_id},
                     operation_context=op_context,
                 )
 
-                # Handle idempotent success
                 if data.get("idempotent_success"):
                     return {
                         "success": True,
@@ -367,25 +307,18 @@ def register_docker_tool(mcp: FastMCP) -> None:
                     }
 
                 docker_data = data.get("docker") or {}
-                # Map action names to GraphQL response field names where they differ
-                response_field_map = {
-                    "update": "updateContainer",
-                    "remove": "removeContainer",
-                }
-                field = response_field_map.get(action, action)
-                result = docker_data.get(field)
+                result = docker_data.get(action)
                 return {
                     "success": True,
                     "action": action,
                     "container": result,
                 }
 
-            raise ToolError(f"Unhandled action '{action}' — this is a bug")
+            raise ToolError(f"Unhandled action '{action}' -- this is a bug")
 
         except ToolError:
             raise
         except Exception as e:
             logger.error(f"Error in unraid_docker action={action}: {e}", exc_info=True)
             raise ToolError(f"Failed to execute docker/{action}: {e!s}") from e
-
     logger.info("Docker tool registered successfully")

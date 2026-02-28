@@ -39,7 +39,7 @@ KNOWN_DESTRUCTIVE: dict[str, dict[str, set[str]]] = {
         "module": "unraid_mcp.tools.docker",
         "register_fn": "register_docker_tool",
         "tool_name": "unraid_docker",
-        "actions": {"remove"},
+        "actions": set(),
         "runtime_set": DOCKER_DESTRUCTIVE,
     },
     "vm": {
@@ -141,7 +141,7 @@ class TestDestructiveActionRegistries:
 # Build parametrized test cases: (tool_key, action, kwargs_without_confirm)
 # Each destructive action needs the minimum required params (minus confirm)
 _DESTRUCTIVE_TEST_CASES: list[tuple[str, str, dict]] = [
-    # Docker
+    # Docker (now unavailable, not destructive)
     ("docker", "remove", {"container_id": "abc123"}),
     # VM
     ("vm", "force_stop", {"vm_id": "test-vm-uuid"}),
@@ -218,8 +218,12 @@ class TestConfirmationGuards:
         module_path, register_fn, tool_name = _TOOL_REGISTRY[tool_key]
         tool_fn = make_tool_fn(module_path, register_fn, tool_name)
 
-        with pytest.raises(ToolError, match="confirm=True"):
-            await tool_fn(action=action, **kwargs)
+        if tool_key == "docker" and action == "remove":
+            with pytest.raises(ToolError, match="not available"):
+                await tool_fn(action=action, **kwargs)
+        else:
+            with pytest.raises(ToolError, match="confirm=True"):
+                await tool_fn(action=action, **kwargs)
 
     @pytest.mark.parametrize("tool_key,action,kwargs", _DESTRUCTIVE_TEST_CASES, ids=_CASE_IDS)
     async def test_rejects_with_confirm_false(
@@ -237,8 +241,12 @@ class TestConfirmationGuards:
         module_path, register_fn, tool_name = _TOOL_REGISTRY[tool_key]
         tool_fn = make_tool_fn(module_path, register_fn, tool_name)
 
-        with pytest.raises(ToolError, match="destructive"):
-            await tool_fn(action=action, confirm=False, **kwargs)
+        if tool_key == "docker" and action == "remove":
+            with pytest.raises(ToolError, match="not available"):
+                await tool_fn(action=action, confirm=False, **kwargs)
+        else:
+            with pytest.raises(ToolError, match="destructive"):
+                await tool_fn(action=action, confirm=False, **kwargs)
 
     @pytest.mark.parametrize("tool_key,action,kwargs", _DESTRUCTIVE_TEST_CASES, ids=_CASE_IDS)
     async def test_error_message_includes_action_name(
@@ -256,8 +264,12 @@ class TestConfirmationGuards:
         module_path, register_fn, tool_name = _TOOL_REGISTRY[tool_key]
         tool_fn = make_tool_fn(module_path, register_fn, tool_name)
 
-        with pytest.raises(ToolError, match=action):
-            await tool_fn(action=action, **kwargs)
+        if tool_key == "docker" and action == "remove":
+            with pytest.raises(ToolError, match="not available"):
+                await tool_fn(action=action, **kwargs)
+        else:
+            with pytest.raises(ToolError, match=action):
+                await tool_fn(action=action, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -269,14 +281,10 @@ class TestConfirmAllowsExecution:
     """Destructive actions with confirm=True should reach the GraphQL layer."""
 
     async def test_docker_remove_with_confirm(self, _mock_docker_graphql: AsyncMock) -> None:
-        cid = "a" * 64 + ":local"
-        _mock_docker_graphql.side_effect = [
-            {"docker": {"containers": [{"id": cid, "names": ["old-app"]}]}},
-            {"docker": {"removeContainer": True}},
-        ]
+        """docker/remove is now unavailable, not destructive."""
         tool_fn = make_tool_fn("unraid_mcp.tools.docker", "register_docker_tool", "unraid_docker")
-        result = await tool_fn(action="remove", container_id="old-app", confirm=True)
-        assert result["success"] is True
+        with pytest.raises(ToolError, match="not available"):
+            await tool_fn(action="remove", container_id="old-app", confirm=True)
 
     async def test_vm_force_stop_with_confirm(self, _mock_vm_graphql: AsyncMock) -> None:
         _mock_vm_graphql.return_value = {"vm": {"forceStop": True}}

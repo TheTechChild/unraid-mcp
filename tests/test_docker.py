@@ -66,14 +66,18 @@ def _make_tool():
 class TestDockerValidation:
     async def test_remove_requires_confirm(self, _mock_graphql: AsyncMock) -> None:
         tool_fn = _make_tool()
-        with pytest.raises(ToolError, match="destructive"):
+        with pytest.raises(ToolError, match="not available"):
             await tool_fn(action="remove", container_id="abc123")
 
     @pytest.mark.parametrize("action", ["start", "stop", "details", "logs", "pause", "unpause"])
     async def test_container_actions_require_id(self, _mock_graphql: AsyncMock, action: str) -> None:
         tool_fn = _make_tool()
-        with pytest.raises(ToolError, match="container_id"):
-            await tool_fn(action=action)
+        if action in ["pause", "unpause"]:
+            with pytest.raises(ToolError, match="not available"):
+                await tool_fn(action=action)
+        else:
+            with pytest.raises(ToolError, match="container_id"):
+                await tool_fn(action=action)
 
     async def test_network_details_requires_id(self, _mock_graphql: AsyncMock) -> None:
         tool_fn = _make_tool()
@@ -115,26 +119,20 @@ class TestDockerActions:
         assert result["success"] is True
 
     async def test_networks(self, _mock_graphql: AsyncMock) -> None:
-        _mock_graphql.return_value = {"dockerNetworks": [{"id": "net:1", "name": "bridge"}]}
+        _mock_graphql.return_value = {"docker": {"networks": [{"id": "net:1", "name": "bridge"}]}}
         tool_fn = _make_tool()
         result = await tool_fn(action="networks")
         assert len(result["networks"]) == 1
 
     async def test_port_conflicts(self, _mock_graphql: AsyncMock) -> None:
-        _mock_graphql.return_value = {"docker": {"portConflicts": []}}
         tool_fn = _make_tool()
-        result = await tool_fn(action="port_conflicts")
-        assert result["port_conflicts"] == []
+        with pytest.raises(ToolError, match="not available"):
+            await tool_fn(action="port_conflicts")
 
     async def test_check_updates(self, _mock_graphql: AsyncMock) -> None:
-        _mock_graphql.return_value = {
-            "docker": {
-                "containerUpdateStatuses": [{"id": "c1", "name": "plex", "updateAvailable": True}]
-            }
-        }
         tool_fn = _make_tool()
-        result = await tool_fn(action="check_updates")
-        assert len(result["update_statuses"]) == 1
+        with pytest.raises(ToolError, match="not available"):
+            await tool_fn(action="check_updates")
 
     async def test_idempotent_start(self, _mock_graphql: AsyncMock) -> None:
         # Resolve + idempotent success
@@ -171,23 +169,14 @@ class TestDockerActions:
         assert "note" in result
 
     async def test_update_all(self, _mock_graphql: AsyncMock) -> None:
-        _mock_graphql.return_value = {
-            "docker": {"updateAllContainers": [{"id": "c1", "state": "running"}]}
-        }
         tool_fn = _make_tool()
-        result = await tool_fn(action="update_all")
-        assert result["success"] is True
-        assert len(result["containers"]) == 1
+        with pytest.raises(ToolError, match="not available"):
+            await tool_fn(action="update_all")
 
     async def test_remove_with_confirm(self, _mock_graphql: AsyncMock) -> None:
-        cid = "a" * 64 + ":local"
-        _mock_graphql.side_effect = [
-            {"docker": {"containers": [{"id": cid, "names": ["old-app"]}]}},
-            {"docker": {"removeContainer": True}},
-        ]
         tool_fn = _make_tool()
-        result = await tool_fn(action="remove", container_id="old-app", confirm=True)
-        assert result["success"] is True
+        with pytest.raises(ToolError, match="not available"):
+            await tool_fn(action="remove", container_id="old-app", confirm=True)
 
     async def test_details_found(self, _mock_graphql: AsyncMock) -> None:
         _mock_graphql.return_value = {
@@ -202,24 +191,14 @@ class TestDockerActions:
         assert result["names"] == ["plex"]
 
     async def test_logs(self, _mock_graphql: AsyncMock) -> None:
-        cid = "a" * 64 + ":local"
-        _mock_graphql.side_effect = [
-            {"docker": {"containers": [{"id": cid, "names": ["plex"]}]}},
-            {"docker": {"logs": "2026-02-08 log line here"}},
-        ]
         tool_fn = _make_tool()
-        result = await tool_fn(action="logs", container_id="plex")
-        assert "log line" in result["logs"]
+        with pytest.raises(ToolError, match="not available"):
+            await tool_fn(action="logs", container_id="plex")
 
     async def test_pause_container(self, _mock_graphql: AsyncMock) -> None:
-        cid = "a" * 64 + ":local"
-        _mock_graphql.side_effect = [
-            {"docker": {"containers": [{"id": cid, "names": ["plex"]}]}},
-            {"docker": {"pause": {"id": cid, "state": "paused"}}},
-        ]
         tool_fn = _make_tool()
-        result = await tool_fn(action="pause", container_id="plex")
-        assert result["success"] is True
+        with pytest.raises(ToolError, match="not available"):
+            await tool_fn(action="pause", container_id="plex")
 
     async def test_generic_exception_wraps_in_tool_error(self, _mock_graphql: AsyncMock) -> None:
         _mock_graphql.side_effect = RuntimeError("unexpected failure")
@@ -232,16 +211,10 @@ class TestDockerMutationFailures:
     """Tests for mutation responses that indicate failure or unexpected shapes."""
 
     async def test_remove_mutation_returns_null(self, _mock_graphql: AsyncMock) -> None:
-        """removeContainer returning null instead of True."""
-        cid = "a" * 64 + ":local"
-        _mock_graphql.side_effect = [
-            {"docker": {"containers": [{"id": cid, "names": ["old-app"]}]}},
-            {"docker": {"removeContainer": None}},
-        ]
+        """remove is now unavailable."""
         tool_fn = _make_tool()
-        result = await tool_fn(action="remove", container_id="old-app", confirm=True)
-        assert result["success"] is True
-        assert result["container"] is None
+        with pytest.raises(ToolError, match="not available"):
+            await tool_fn(action="remove", container_id="old-app", confirm=True)
 
     async def test_start_mutation_empty_docker_response(self, _mock_graphql: AsyncMock) -> None:
         """docker field returning empty object (missing the action sub-field)."""
@@ -268,12 +241,10 @@ class TestDockerMutationFailures:
         assert result["container"]["state"] == "running"
 
     async def test_update_all_returns_empty_list(self, _mock_graphql: AsyncMock) -> None:
-        """update_all with no containers to update."""
-        _mock_graphql.return_value = {"docker": {"updateAllContainers": []}}
+        """update_all is now unavailable."""
         tool_fn = _make_tool()
-        result = await tool_fn(action="update_all")
-        assert result["success"] is True
-        assert result["containers"] == []
+        with pytest.raises(ToolError, match="not available"):
+            await tool_fn(action="update_all")
 
     async def test_mutation_timeout(self, _mock_graphql: AsyncMock) -> None:
         """Mid-operation timeout during a docker mutation."""

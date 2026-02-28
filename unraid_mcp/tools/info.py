@@ -18,15 +18,14 @@ QUERIES: dict[str, str] = {
     "overview": """
         query GetSystemInfo {
           info {
-            os { platform distro release codename kernel arch hostname codepage logofile serial build uptime }
+            os { platform distro release codename kernel arch hostname fqdn build uptime logofile serial uefi }
             cpu { manufacturer brand vendor family model stepping revision voltage speed speedmin speedmax threads cores processors socket cache flags }
             memory {
               layout { bank type clockSpeed formFactor manufacturer partNum serialNum }
             }
-            baseboard { manufacturer model version serial assetTag }
-            system { manufacturer model version serial uuid sku }
-            versions { kernel openssl systemOpenssl systemOpensslLib node v8 npm yarn pm2 gulp grunt git tsc mysql redis mongodb apache nginx php docker postfix postgresql perl python gcc unraid }
-            apps { installed started }
+            baseboard { manufacturer model version serial assetTag memMax memSlots }
+            system { manufacturer model version serial uuid sku virtual }
+            versions { id core { unraid api kernel } packages { openssl node npm pm2 git nginx php docker } }
             machineId
             time
           }
@@ -67,7 +66,7 @@ QUERIES: dict[str, str] = {
     """,
     "connect": """
         query GetConnectSettings {
-          connect { status sandbox flashGuid }
+          connect { id }
         }
     """,
     "variables": """
@@ -87,12 +86,12 @@ QUERIES: dict[str, str] = {
     """,
     "metrics": """
         query GetMetrics {
-          metrics { cpu { used } memory { used total } }
+          metrics { cpu { percentTotal } memory { used total free available percentTotal } }
         }
     """,
     "services": """
         query GetServices {
-          services { name state }
+          services { name online version }
         }
     """,
     "display": """
@@ -122,7 +121,7 @@ QUERIES: dict[str, str] = {
         query GetServer {
           info {
             os { hostname uptime }
-            versions { unraid }
+            versions { core { unraid } }
             machineId time
           }
           array { state }
@@ -131,12 +130,12 @@ QUERIES: dict[str, str] = {
     """,
     "servers": """
         query GetServers {
-          servers { id name status description ip port }
+          servers { id name status }
         }
     """,
     "flash": """
         query GetFlash {
-          flash { id guid product vendor size }
+          flash { id product vendor }
         }
     """,
     "ups_devices": """

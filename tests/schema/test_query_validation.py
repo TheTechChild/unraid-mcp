@@ -283,6 +283,7 @@ class TestDockerQueries:
     def test_logs_query(self, schema: GraphQLSchema) -> None:
         from unraid_mcp.tools.docker import QUERIES
 
+        assert "logs" in QUERIES, "logs query should exist in QUERIES dict"
         errors = _validate_operation(schema, QUERIES["logs"])
         assert not errors, f"logs query validation failed: {errors}"
 
@@ -295,28 +296,22 @@ class TestDockerQueries:
     def test_network_details_query(self, schema: GraphQLSchema) -> None:
         from unraid_mcp.tools.docker import QUERIES
 
-        errors = _validate_operation(schema, QUERIES["network_details"])
-        assert not errors, f"network_details query validation failed: {errors}"
+        assert "network_details" not in QUERIES, "network_details query should not be in QUERIES dict (unavailable)"
 
     def test_port_conflicts_query(self, schema: GraphQLSchema) -> None:
         from unraid_mcp.tools.docker import QUERIES
 
-        errors = _validate_operation(schema, QUERIES["port_conflicts"])
-        assert not errors, f"port_conflicts query validation failed: {errors}"
+        assert "port_conflicts" not in QUERIES, "port_conflicts query should not be in QUERIES dict (unavailable)"
 
     def test_check_updates_query(self, schema: GraphQLSchema) -> None:
         from unraid_mcp.tools.docker import QUERIES
 
-        errors = _validate_operation(schema, QUERIES["check_updates"])
-        assert not errors, f"check_updates query validation failed: {errors}"
+        assert "check_updates" not in QUERIES, "check_updates query should not be in QUERIES dict (unavailable)"
 
     def test_all_docker_queries_covered(self, schema: GraphQLSchema) -> None:
         from unraid_mcp.tools.docker import QUERIES
 
-        expected = {
-            "list", "details", "logs", "networks",
-            "network_details", "port_conflicts", "check_updates",
-        }
+        expected = {"list", "details", "logs", "networks"}
         assert set(QUERIES.keys()) == expected
 
 
@@ -338,37 +333,32 @@ class TestDockerMutations:
     def test_pause_mutation(self, schema: GraphQLSchema) -> None:
         from unraid_mcp.tools.docker import MUTATIONS
 
-        errors = _validate_operation(schema, MUTATIONS["pause"])
-        assert not errors, f"pause mutation validation failed: {errors}"
+        assert "pause" not in MUTATIONS, "pause mutation should not be in MUTATIONS dict (unavailable)"
 
     def test_unpause_mutation(self, schema: GraphQLSchema) -> None:
         from unraid_mcp.tools.docker import MUTATIONS
 
-        errors = _validate_operation(schema, MUTATIONS["unpause"])
-        assert not errors, f"unpause mutation validation failed: {errors}"
+        assert "unpause" not in MUTATIONS, "unpause mutation should not be in MUTATIONS dict (unavailable)"
 
     def test_remove_mutation(self, schema: GraphQLSchema) -> None:
         from unraid_mcp.tools.docker import MUTATIONS
 
-        errors = _validate_operation(schema, MUTATIONS["remove"])
-        assert not errors, f"remove mutation validation failed: {errors}"
+        assert "remove" not in MUTATIONS, "remove mutation should not be in MUTATIONS dict (unavailable)"
 
     def test_update_mutation(self, schema: GraphQLSchema) -> None:
         from unraid_mcp.tools.docker import MUTATIONS
 
-        errors = _validate_operation(schema, MUTATIONS["update"])
-        assert not errors, f"update mutation validation failed: {errors}"
+        assert "update" not in MUTATIONS, "update mutation should not be in MUTATIONS dict (unavailable)"
 
     def test_update_all_mutation(self, schema: GraphQLSchema) -> None:
         from unraid_mcp.tools.docker import MUTATIONS
 
-        errors = _validate_operation(schema, MUTATIONS["update_all"])
-        assert not errors, f"update_all mutation validation failed: {errors}"
+        assert "update_all" not in MUTATIONS, "update_all mutation should not be in MUTATIONS dict (unavailable)"
 
     def test_all_docker_mutations_covered(self, schema: GraphQLSchema) -> None:
         from unraid_mcp.tools.docker import MUTATIONS
 
-        expected = {"start", "stop", "pause", "unpause", "remove", "update", "update_all"}
+        expected = {"start", "stop"}
         assert set(MUTATIONS.keys()) == expected
 
 
