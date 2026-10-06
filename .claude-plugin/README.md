@@ -46,12 +46,16 @@ Query and monitor Unraid servers via GraphQL API - array status, disk health, co
 
 ## Configuration
 
-After installation, configure your Unraid server credentials:
+The plugin connects over HTTP to an Unraid MCP server that is already running (for example, the Docker container on your Unraid server). It does not start a local server.
+
+Set these variables in the shell that starts Claude Code:
 
 ```bash
-export UNRAID_API_URL="https://your-unraid-server/graphql"
-export UNRAID_API_KEY="your-api-key"
+export UNRAID_MCP_URL="http://your-unraid-server:6970/mcp"  # default: http://localhost:6970/mcp
+export UNRAID_MCP_TOKEN="your-mcp-bearer-token"
 ```
+
+The server itself needs `UNRAID_API_URL` and `UNRAID_API_KEY` (see the root `README.md`).
 
 **Getting an API Key:**
 1. Open Unraid WebUI
